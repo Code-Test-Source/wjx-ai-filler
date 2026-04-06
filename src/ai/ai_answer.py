@@ -4,17 +4,10 @@ Uses configured AI API (DeepSeek or similar)
 """
 
 import json
-import sys
-from pathlib import Path
-
-# Add src to path for imports
-src_path = Path(__file__).parent
-if str(src_path) not in sys.path:
-    sys.path.insert(0, str(src_path))
 
 import requests
 
-from config import config
+from ..utils.config import config
 
 # System prompt for the AI
 SYSTEM_PROMPT = """你是一个友好的问卷填写助手。你会根据问题的语义给出合理、自然的回答。

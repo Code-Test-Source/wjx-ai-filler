@@ -36,9 +36,17 @@ A professional AI-powered survey automation tool for 问卷星 (WJX/WenJuanXing)
 
 ## Setup
 
-### 1. Install Dependencies
+### 1. Create Virtual Environment & Install Dependencies
 
 ```bash
+uv venv wjx-ai
+uv sync
+```
+
+Or with pip:
+```bash
+python -m venv wjx-ai
+wjx-ai\Scripts\activate  # Windows
 pip install -r requirements.txt
 ```
 
@@ -48,7 +56,7 @@ pip install -r requirements.txt
 
 Run the CLI command to automatically download the matching ChromeDriver:
 ```bash
-python -m src.cli download-driver
+uv run python -m src.cli download-driver
 ```
 
 This will automatically detect your Chrome version and download the correct ChromeDriver.
@@ -73,8 +81,10 @@ If auto-download fails, download manually:
 
 **Method B: Use CLI Import**
 ```bash
-python -m src.cli import-cookies
+uv run python -m src.cli import-cookies
 ```
+
+> ⚠️ **Login Expired?** If you see login errors or the filler stops working, your cookies may have expired. Simply re-login to wjx.cn in your browser and export new cookies to `cookies.json`.
 
 ### 4. Configure API
 
@@ -96,32 +106,32 @@ WJX_ACTIVITY_URL=https://www.wjx.cn/wjx/promote/joinbacklist.aspx?activity=YOUR_
 
 ```bash
 # First time setup - run interactive setup
-python -m src.cli setup
+uv run python -m src.cli setup
 
 # Run the filler
-python -m src.cli run
+uv run python -m src.cli run
 
 # Or use interactive mode
-python -m src.cli interactive
+uv run python -m src.cli interactive
 ```
 
 ## CLI Commands
 
 ```bash
 # Setup configuration interactively
-python -m src.cli setup
+uv run python -m src.cli setup
 
 # Convert browser cookies to JSON format
-python -m src.cli import-cookies
+uv run python -m src.cli import-cookies
 
 # Run the survey filler
-python -m src.cli run
+uv run python -m src.cli run
 
 # Interactive mode
-python -m src.cli interactive
+uv run python -m src.cli interactive
 
 # Check configuration status
-python -m src.cli check
+uv run python -m src.cli check
 ```
 
 ## Configuration
@@ -171,6 +181,20 @@ wjx_ai_filler/
 - ✅ Text input / Textarea
 - ✅ Dropdown / Select
 - ✅ Matrix scale ratings (1-5)
+
+## Troubleshooting
+
+### Login / Cookie Issues
+- **Problem**: Filler shows "请先登录" or stops working
+- **Solution**: Your cookies have expired. Re-login to wjx.cn and export new cookies to `cookies.json`
+
+### ChromeDriver Issues
+- **Problem**: "chromedriver not found" or version mismatch
+- **Solution**: Run `uv run python -m src.cli download-driver` to auto-download the correct version
+
+### Daily Limit
+- **Problem**: "每日限制已达" message
+- **Solution**: WJX limits 30 surveys per day. Wait until tomorrow.
 
 ## License
 

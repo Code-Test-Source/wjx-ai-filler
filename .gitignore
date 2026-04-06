@@ -13,6 +13,7 @@ chromedriver*.zip
 .venv/
 venv/
 env/
+wjx-ai/
 
 # Python
 __pycache__/
