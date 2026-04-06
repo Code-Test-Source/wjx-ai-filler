@@ -561,36 +561,77 @@ def click_start_button(driver):
 
 def find_next_page_button(driver):
     """Find and click '下一页' button if exists."""
-    # Check buttons and inputs
-    for tag, attr in [('button', 'text'), ('input', 'value')]:
+    current_url = driver.current_url
+
+    # Collect all elements with "下一页"
+    found_elements = []
+
+    for tag in ['button', 'input', 'a', 'div', 'span']:
         for elem in driver.find_elements(By.TAG_NAME, tag):
-            text = elem.text or elem.get_attribute(attr or 'value') or ''
-            if '下一页' in text or 'next' in text.lower():
-                click_element(driver, elem)
+            try:
+                text = elem.text or elem.get_attribute('value') or elem.get_attribute('innerText') or ''
+                if '下一页' in text:
+                    found_elements.append((tag, elem, text[:30]))
+            except:
+                pass
+
+    if not found_elements:
+        return False
+
+    print(f"   [DEBUG] Found {len(found_elements)} elements with '下一页'")
+
+    # Try clicking each element
+    for tag, elem, text in found_elements:
+        print(f"   [DEBUG] Trying <{tag}>: '{text}'")
+
+        try:
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", elem)
+            time.sleep(0.3)
+        except:
+            pass
+
+        # Try multiple click methods
+        for method in ['click', 'js', 'events']:
+            try:
+                if method == 'click':
+                    elem.click()
+                elif method == 'js':
+                    driver.execute_script("arguments[0].click();", elem)
+                elif method == 'events':
+                    driver.execute_script("""
+                        var elem = arguments[0];
+                        ['click', 'mousedown', 'mouseup'].forEach(function(evt) {
+                            elem.dispatchEvent(new MouseEvent(evt, {bubbles: true, cancelable: true}));
+                        });
+                    """, elem)
+
                 time.sleep(2)
-                return True
 
-    # Check links
-    for elem in driver.find_elements(By.TAG_NAME, 'a'):
-        if '下一页' in (elem.text or ''):
-            click_element(driver, elem)
-            time.sleep(2)
-            return True
+                # Check if page changed (URL changed or page reloaded)
+                new_url = driver.current_url
+                if new_url != current_url:
+                    print(f"   [INFO] Clicked '下一页' via {method} - URL changed")
+                    return True
 
+                # Check if questions changed (page content changed)
+                new_questions = driver.find_elements(By.CSS_SELECTOR, '.field')
+                if new_questions:
+                    print(f"   [INFO] Clicked '下一页' via {method} - new questions found")
+                    return True
+
+            except Exception as e:
+                pass
+
+    print("   [WARN] Could not click '下一页' successfully")
     return False
 
 
 def has_next_page(driver):
-    """Check if '下一页' button exists (without clicking)."""
-    for tag, attr in [('button', 'text'), ('input', 'value')]:
-        for elem in driver.find_elements(By.TAG_NAME, tag):
-            text = elem.text or elem.get_attribute(attr or 'value') or ''
-            if '下一页' in text or 'next' in text.lower():
-                return True
-    for elem in driver.find_elements(By.TAG_NAME, 'a'):
-        if '下一页' in (elem.text or ''):
-            return True
-    return False
+    """Check if '下一页' text exists in page."""
+    try:
+        return '下一页' in driver.page_source
+    except:
+        return False
 
 
 def find_submit_button(driver):
@@ -876,15 +917,24 @@ def fill_survey_with_ai(driver, survey_url, max_time=180):
                 else:
                     return False
 
-            # First check if there's a "下一页" button
-            if has_next_page(driver):
+            # Check page source for "下一页" directly
+            page_source = driver.page_source
+            has_next = '下一页' in page_source
+
+            if has_next:
+                print("   [DEBUG] Page contains '下一页', attempting to click...")
+
+                # Try clicking next page button
                 if find_next_page_button(driver):
                     print("   [INFO] Going to next page...")
                     random_delay()
                     page_num += 1
                     continue
+                else:
+                    print("   [WARN] '下一页' found but click failed")
 
-            # No "下一页" - try to submit
+            # No "下一页" or click failed - try to submit
+            print("   [DEBUG] No '下一页' found, trying to submit...")
             find_submit_button(driver)
             time.sleep(3)
 
