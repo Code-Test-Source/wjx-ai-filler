@@ -132,13 +132,30 @@ def check_website_daily_limit(driver):
 
 
 def check_survey_reward(driver):
-    """Check survey reward points. Returns (has_reward, points)."""
+    """Check survey reward points. Returns (has_reward, points).
+
+    Note: Reward info is usually only shown on the activity page, not on the survey itself.
+    If no reward found on survey page, default to allowing the survey.
+    """
     try:
         page = driver.page_source
-        match = re.search(r'提供\s*(\d+)\s*点数', page) or re.search(r'(\d+)\s*点数', page)
-        if match:
-            return True, int(match.group(1))
-        return False, 0
+
+        # Look for specific reward patterns on activity/survey list pages
+        # Pattern: "提供XX点数" or "XX积分" near survey link
+        patterns = [
+            r'提供\s*(\d+)\s*点数',
+            r'奖励\s*(\d+)\s*点',
+            r'可获得\s*(\d+)\s*点',
+            r'互填\s*[\:：]\s*(\d+)\s*点',
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, page)
+            if match:
+                return True, int(match.group(1))
+
+        # No reward info found - allow survey (reward shown on activity page, not survey)
+        return True, 0
     except:
         return True, 0
 
@@ -610,7 +627,7 @@ def rescan_unanswered_questions(driver):
 # ============================================================================
 
 def fill_survey_with_ai(driver, survey_url):
-    """Fill a single survey (handles multi-page). Returns True, 'daily_limit', 'no_reward', or False."""
+    """Fill a single survey (handles multi-page). Returns True, 'daily_limit', 'low_reward', or False."""
     if get_daily_count() >= DAILY_LIMIT:
         print(f"\n[STOP] Daily limit reached")
         return "daily_limit"
@@ -628,11 +645,13 @@ def fill_survey_with_ai(driver, survey_url):
             return "daily_limit"
 
         has_reward, points = check_survey_reward(driver)
-        if not has_reward:
-            return "no_reward"
-        if points < MIN_REWARD_POINTS:
+        # Only skip if reward is explicitly found and is below minimum
+        # (points=0 means reward info not found on this page - it's shown on activity page)
+        if has_reward and points > 0 and points < MIN_REWARD_POINTS:
+            print(f"   [SKIP] Reward ({points}点) < minimum ({MIN_REWARD_POINTS}点)")
             return "low_reward"
-        print(f"   [INFO] Reward: {points}点")
+        if points > 0:
+            print(f"   [INFO] Reward: {points}点")
 
         # Process each page
         page_num = 1
@@ -746,6 +765,8 @@ def main():
 
         # Fill surveys
         success = 0
+        skipped_low_reward = 0
+
         for i, link in enumerate(links):
             if get_daily_count() >= DAILY_LIMIT:
                 break
@@ -755,10 +776,18 @@ def main():
 
             if result == True:
                 success += 1
+            elif result == "low_reward":
+                skipped_low_reward += 1
             elif result == "daily_limit":
                 break
 
             random_delay()
+
+        print(f"\n{'='*60}")
+        print(f"Completed: {success} surveys")
+        if skipped_low_reward:
+            print(f"Skipped (reward < {MIN_REWARD_POINTS}点): {skipped_low_reward}")
+        print(f"Daily total: {get_daily_count()}/{DAILY_LIMIT}")
 
         print(f"\n{'='*60}")
         print(f"Completed: {success} surveys")
