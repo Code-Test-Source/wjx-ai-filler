@@ -21,7 +21,7 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 # Local imports
 from .wjx_filler import load_survey_links
 from .auto_fetch import auto_fetch_surveys
-from ..ai.ai_answer import generate_answer, get_ai_answers_batch
+from ..ai.ai_answer import get_ai_answers_batch, get_fallback_answers
 from ..utils.config import config
 
 # Get settings from config
@@ -409,124 +409,6 @@ def extract_all_questions(driver):
                 continue
 
     return questions
-
-def get_ai_answers_batch(questions):
-    """
-    Send ALL questions to AI at once and get answers for all
-    This is more efficient and allows AI to consider the full context
-    """
-    # Build a comprehensive prompt with all questions
-    prompt = "请回答以下问卷的所有问题。根据问题的语义给出合理、自然的回答。\n\n"
-    prompt += "请以JSON格式返回答案，格式如下：\n"
-    prompt += '{"1": "答案1", "2": "答案2", ...}\n\n'
-    prompt += "问题列表：\n\n"
-
-    for q in questions:
-        prompt += f"问题{q['index']}：{q['title']}\n"
-        # Handle both 'type' and 'types' keys
-        qtype = q.get('type') or (q.get('types', ['unknown'])[0] if q.get('types') else 'unknown')
-        prompt += f"类型：{qtype}\n"
-
-        if q.get('options'):
-            prompt += "选项：\n"
-            for i, opt in enumerate(q['options']):
-                prompt += f"  {i+1}. {opt}\n"
-
-        prompt += "\n"
-
-    prompt += """
-请为每个问题选择一个最合适的答案。
-对于单选题，返回选项编号（如1、2、3）。注意：不要选择包含"其他"或"Others"的选项。
-对于多选题，返回选项编号用逗号分隔（如"1,2,3"），最多选择3个选项。注意：不要选择包含"其他"或"Others"的选项。
-对于填空题/开放性问题，请给出简短但具体、有意义的回答（20-50字）。
-只返回JSON，不要其他内容。
-"""
-
-    print(f"\n📡 Sending {len(questions)} questions to AI...")
-
-    # Call AI API
-    try:
-        from ai_answer import call_ai_api
-        response = call_ai_api(prompt)
-
-        if response:
-            # Try to parse JSON from response
-            import re
-            # Find JSON in response
-            json_match = re.search(r'\{[^{}]*\}', response, re.DOTALL)
-            if json_match:
-                answers = json.loads(json_match.group())
-                print(f"   [OK] Received {len(answers)} answers from AI")
-                return answers
-            else:
-                print(f"   [WARN] Could not parse JSON from AI response")
-                print(f"   Response: {response[:200]}...")
-
-        # Fallback
-        print(f"   [WARN] Using fallback answers")
-        return get_fallback_answers(questions)
-
-    except Exception as e:
-        print(f"   [WARN] AI call failed: {e}")
-        return get_fallback_answers(questions)
-
-def get_fallback_answers(questions):
-    """Generate fallback answers when AI fails"""
-    answers = {}
-    for q in questions:
-        # Handle both 'type' and 'types' keys
-        qtype = q.get('type') or (q.get('types', ['unknown'])[0] if q.get('types') else 'unknown')
-
-        if qtype in ['text', 'textarea']:
-            # Generate contextual answers based on question keywords
-            title = q.get('title', '')
-            if '印象最深' in title or '最深刻' in title:
-                answers[str(q['index'])] = "整体体验很好，服务态度热情周到，印象深刻。"
-            elif '建议' in title:
-                answers[str(q['index'])] = "建议增加更多互动体验项目，提升游客参与感。"
-            elif '意见' in title or '看法' in title:
-                answers[str(q['index'])] = "整体体验不错，希望能继续保持并改进。"
-            elif '满意' in title or '评价' in title:
-                answers[str(q['index'])] = "总体满意，体验良好。"
-            elif '问题' in title or '不足' in title:
-                answers[str(q['index'])] = "暂无明显问题，体验过程顺利。"
-            elif '期望' in title or '希望' in title:
-                answers[str(q['index'])] = "希望能提供更多优质服务和体验项目。"
-            elif '原因' in title or '为什么' in title:
-                answers[str(q['index'])] = "因为整体体验良好，符合预期。"
-            else:
-                answers[str(q['index'])] = "体验很好，总体满意。"
-        elif qtype == 'multiple_choice' and q.get('options'):
-            # For multiple choice, select 1-2 random options (max 3), skip "其他"
-            options = q['options']
-            valid_indices = []
-            for i, opt in enumerate(options):
-                opt_lower = opt.lower() if opt else ''
-                if '其他' not in opt_lower and 'others' not in opt_lower and '其他' not in opt_lower:
-                    valid_indices.append(i + 1)  # 1-based
-
-            if valid_indices:
-                num_options = min(random.randint(1, 2), len(valid_indices), 3)
-                selected = random.sample(valid_indices, num_options)
-                answers[str(q['index'])] = ",".join(map(str, selected))
-            else:
-                answers[str(q['index'])] = "1"
-        elif qtype in ['scale_matrix', 'scale_single']:
-            # For scale questions, return a positive rating
-            answers[str(q['index'])] = str(random.randint(3, 5))
-        elif q.get('options'):
-            # Skip "其他" for single choice too
-            options = q['options']
-            for i, opt in enumerate(options):
-                opt_lower = opt.lower() if opt else ''
-                if '其他' not in opt_lower and 'others' not in opt_lower and '其他' not in opt_lower:
-                    answers[str(q['index'])] = str(i + 1)
-                    break
-            else:
-                answers[str(q['index'])] = "1"
-        else:
-            answers[str(q['index'])] = "1"
-    return answers
 
 def fill_answer(driver, element, question_type, answer):
     """Fill a single answer with delay to avoid detection"""
