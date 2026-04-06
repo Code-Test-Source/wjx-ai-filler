@@ -509,6 +509,20 @@ def fill_answer(driver, element, question_type, answer):
 # Submission
 # ============================================================================
 
+def click_start_button(driver):
+    """Click '开始作答' button if exists. Returns True if clicked."""
+    # Check buttons and inputs for "开始作答"
+    for tag in ['button', 'input', 'a']:
+        for elem in driver.find_elements(By.TAG_NAME, tag):
+            text = elem.text or elem.get_attribute('value') or ''
+            if '开始作答' in text or '开始答题' in text:
+                click_element(driver, elem)
+                time.sleep(2)
+                print("   [INFO] Clicked '开始作答'")
+                return True
+    return False
+
+
 def find_next_page_button(driver):
     """Find and click '下一页' button if exists."""
     # Check various element types
@@ -638,6 +652,10 @@ def fill_survey_with_ai(driver, survey_url):
         driver.get(survey_url)
         random_delay()
 
+        # Click "开始作答" if present
+        click_start_button(driver)
+        random_delay()
+
         # Check limits
         limit_reached, _ = check_website_daily_limit(driver)
         if limit_reached:
@@ -658,16 +676,29 @@ def fill_survey_with_ai(driver, survey_url):
         while page_num <= 20:
             print(f"\n{'='*20} Page {page_num} {'='*20}")
 
+            # Click "开始作答" if present on this page
+            click_start_button(driver)
+
             questions = extract_all_questions(driver)
             print(f"   Found {len(questions)} questions")
 
             if not questions:
-                if check_submission_success(driver):
-                    print("   [OK] Submitted!")
-                    increment_daily_count()
-                    return True
-                if page_num == 1:
-                    return False
+                # Check for "开始作答" button first
+                if click_start_button(driver):
+                    random_delay()
+                    questions = extract_all_questions(driver)
+                    if questions:
+                        print(f"   Found {len(questions)} questions after clicking start")
+
+                if not questions:
+                    if check_submission_success(driver):
+                        print("   [OK] Submitted!")
+                        increment_daily_count()
+                        return True
+                    if page_num == 1:
+                        print("   [WARN] No questions found on first page")
+                        return False
+                    continue  # Try again on next iteration
             else:
                 # Get and fill answers
                 answers = get_ai_answers_batch(questions) or get_fallback_answers(questions)
