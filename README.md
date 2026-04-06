@@ -1,5 +1,9 @@
 # WJX AI Survey Filler
 
+注意：此工具仅适用于问卷星互助问卷社区，建议先积攒积分再打开问卷，并且适当停止问卷避免问卷被做爆－几千分。
+<img width="870" height="97" alt="image" src="https://github.com/user-attachments/assets/fe413cf2-e3b2-4cfc-a72a-4fc91d16978b" />
+
+
 A demo AI-powered survey automation tool for 问卷星 (WJX/WenJuanXing).
 
 Man!
