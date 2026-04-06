@@ -130,6 +130,16 @@ def get_fallback_answers(questions):
             else:
                 answers[idx] = "1"
 
+        elif qtype == 'ranking' and q.get('options'):
+            # For ranking, select 2-4 options in order, skip "其他"
+            valid = [i+1 for i, opt in enumerate(q['options'])
+                     if '其他' not in opt.lower() and 'others' not in opt.lower()]
+            if valid:
+                num = min(random.randint(2, 4), len(valid))
+                answers[idx] = ",".join(map(str, valid[:num]))
+            else:
+                answers[idx] = "1,2"
+
         elif qtype in ['scale_matrix', 'scale_single']:
             answers[idx] = str(random.randint(3, 5))
 

@@ -135,6 +135,13 @@ def detect_question_type(element, elem_type):
         return 'scale_matrix', [f'{i}星' for i in range(1, 6)]
     if elem_type == '5':
         return 'scale_single', [f'{i}星' for i in range(1, 6)]
+    if elem_type == '4':
+        # Ranking/sorting question - uses checkboxes like multiple choice
+        # But we need to get options
+        pass  # Fall through to checkbox detection
+    if elem_type == '3':
+        # Multiple choice
+        pass  # Fall through to checkbox detection
     if elem_type == '2':
         return 'text', []
 
@@ -146,7 +153,7 @@ def detect_question_type(element, elem_type):
     if element.find_elements(By.CSS_SELECTOR, '.scale-div, .scale-rating'):
         return 'scale_single', [f'{i}星' for i in range(1, 6)]
 
-    # Check for multiple choice
+    # Check for multiple choice or ranking (both use checkboxes)
     checkboxes = element.find_elements(By.CSS_SELECTOR, '.ui-checkbox, input[type="checkbox"]')
     if checkboxes:
         for cb in checkboxes:
@@ -157,6 +164,9 @@ def detect_question_type(element, elem_type):
                     options.append(text)
             except:
                 pass
+        # type='4' is ranking, type='3' is multiple choice
+        if elem_type == '4':
+            return 'ranking', options
         return 'multiple_choice', options
 
     # Check for single choice
@@ -311,10 +321,68 @@ def fill_multiple_choice(driver, element, answer):
 
     for idx in indices:
         if idx < len(checkboxes):
-            click_element(driver, checkboxes[idx])
+            # Try visual click first (for UI feedback)
+            try:
+                checkboxes[idx].click()
+                time.sleep(0.1)
+            except:
+                pass
+            # Also use JavaScript as backup
+            try:
+                driver.execute_script("arguments[0].click();", checkboxes[idx])
+            except:
+                pass
+            # Set input directly
             try:
                 inp = checkboxes[idx].find_element(By.CSS_SELECTOR, 'input[type="checkbox"]')
-                driver.execute_script("arguments[0].checked = true;", inp)
+                driver.execute_script("arguments[0].checked = true; arguments[0].dispatchEvent(new Event('change'));", inp)
+            except:
+                pass
+
+    return True
+
+
+def fill_ranking(driver, element, answer):
+    """Fill ranking/sorting question. Similar to multiple choice but order matters."""
+    checkboxes = element.find_elements(By.CSS_SELECTOR, '.ui-checkbox')
+
+    if not checkboxes:
+        return False
+
+    # Parse answer to indices (same as multiple choice)
+    if isinstance(answer, list):
+        indices = [int(x) - 1 for x in answer]
+    elif isinstance(answer, str) and ',' in answer:
+        indices = [int(x.strip()) - 1 for x in answer.split(',')]
+    else:
+        indices = [int(answer) - 1] if str(answer).isdigit() else [0]
+
+    # For ranking, select 2-4 options in order
+    if len(indices) < 2:
+        indices = list(range(min(4, len(checkboxes))))
+
+    # Filter to valid indices (skip "其他")
+    valid = find_valid_indices(checkboxes)
+    if valid:
+        indices = [i for i in indices if i in valid]
+        if len(indices) < 2:
+            indices = valid[:min(4, len(valid))]
+
+    # Click each checkbox in order
+    for idx in indices[:4]:  # Max 4 items for ranking
+        if idx < len(checkboxes):
+            try:
+                checkboxes[idx].click()
+                time.sleep(0.15)  # Small delay between clicks
+            except:
+                pass
+            try:
+                driver.execute_script("arguments[0].click();", checkboxes[idx])
+            except:
+                pass
+            try:
+                inp = checkboxes[idx].find_element(By.CSS_SELECTOR, 'input[type="checkbox"]')
+                driver.execute_script("arguments[0].checked = true; arguments[0].dispatchEvent(new Event('change'));", inp)
             except:
                 pass
 
@@ -402,6 +470,8 @@ def fill_answer(driver, element, question_type, answer):
         return fill_single_choice(driver, element, answer)
     elif question_type == 'multiple_choice':
         return fill_multiple_choice(driver, element, answer)
+    elif question_type == 'ranking':
+        return fill_ranking(driver, element, answer)
     elif question_type in ['text', 'textarea']:
         return fill_text(driver, element, answer)
     elif question_type == 'dropdown':
@@ -526,41 +596,99 @@ def has_next_page(driver):
 def find_submit_button(driver):
     """Find and click submit button."""
     selectors = [
-        '.voteDiv', '#submit', 'button[type="submit"]', 'input[type="submit"]',
-        '#ctlNext', '.nextbtn', '[class*="submit"]'
+        ('.voteDiv', 'voteDiv'),
+        ('#submit', 'submit'),
+        ('button[type="submit"]', 'submit button'),
+        ('input[type="submit"]', 'submit input'),
+        ('#ctlNext', 'ctlNext'),
+        ('.nextbtn', 'nextbtn'),
     ]
 
-    for selector in selectors:
+    for selector, name in selectors:
         try:
             btn = driver.find_element(By.CSS_SELECTOR, selector)
-            btn.click()
-            time.sleep(2)
+            # Try normal click
+            try:
+                btn.click()
+                print(f"   [INFO] Clicked submit ({name})")
+            except:
+                pass
+            # Also try JavaScript click
+            try:
+                driver.execute_script("arguments[0].click();", btn)
+            except:
+                pass
+            time.sleep(1)
             return True
         except:
             continue
 
-    # Try by text
+    # Try by text "提交"
     for btn in driver.find_elements(By.TAG_NAME, 'button'):
         if '提交' in btn.text:
-            btn.click()
-            time.sleep(2)
+            try:
+                btn.click()
+                print(f"   [INFO] Clicked submit button by text")
+            except:
+                pass
+            try:
+                driver.execute_script("arguments[0].click();", btn)
+            except:
+                pass
+            time.sleep(1)
             return True
 
+    # Try input with value "提交"
+    for inp in driver.find_elements(By.CSS_SELECTOR, 'input[type="button"], input[type="submit"]'):
+        val = inp.get_attribute('value') or ''
+        if '提交' in val:
+            try:
+                inp.click()
+                print(f"   [INFO] Clicked submit input by value")
+            except:
+                pass
+            try:
+                driver.execute_script("arguments[0].click();", inp)
+            except:
+                pass
+            time.sleep(1)
+            return True
+
+    print("   [WARN] No submit button found")
     return False
 
 
 def check_submission_success(driver):
     """Check if survey was submitted successfully."""
-    page = driver.page_source
-    url = driver.current_url
+    try:
+        page = driver.page_source
+        url = driver.current_url
 
-    indicators = ['提交成功', '感谢参与', '问卷已提交', '已完成', 'answer over']
-    if any(ind in page for ind in indicators):
-        return True
-    if 'joinok' in url or 'success' in url.lower():
-        return True
+        # Check for success indicators in page content
+        indicators = [
+            '提交成功', '感谢参与', '感谢您的参与', '问卷已提交',
+            '已完成', '感谢您', '提交完毕', 'answer over',
+            '答题结束', '问卷结束', '答题完成'
+        ]
+        for ind in indicators:
+            if ind in page:
+                print(f"   [DEBUG] Found success indicator: '{ind}'")
+                return True
 
-    return False
+        # Check URL for success page
+        if 'joinok' in url or 'success' in url.lower() or 'complete' in url.lower():
+            print(f"   [DEBUG] Success URL detected")
+            return True
+
+        # Check if we're back to activity page (sometimes happens after submit)
+        if 'joinbacklist' in url or 'promote' in url:
+            print(f"   [DEBUG] Redirected to activity page - likely submitted")
+            return True
+
+        return False
+    except Exception as e:
+        print(f"   [DEBUG] Error checking success: {e}")
+        return False
 
 
 # ============================================================================
@@ -580,10 +708,16 @@ def rescan_unanswered_questions(driver):
 
         # Detect question types
         types = []
-        if parent.find_elements(By.CSS_SELECTOR, '.ui-radio, input[type="radio"]'):
+        parent_type = parent.get_attribute('type')
+
+        # Check for ranking (type='4') first
+        if parent_type == '4':
+            types.append('ranking')
+        elif parent.find_elements(By.CSS_SELECTOR, '.ui-radio, input[type="radio"]'):
             types.append('single_choice')
-        if parent.find_elements(By.CSS_SELECTOR, '.ui-checkbox, input[type="checkbox"]'):
+        elif parent.find_elements(By.CSS_SELECTOR, '.ui-checkbox, input[type="checkbox"]'):
             types.append('multiple_choice')
+
         if parent.find_elements(By.CSS_SELECTOR, 'textarea, input[type="text"]'):
             types.append('text')
         if parent.find_elements(By.CSS_SELECTOR, 'select'):
@@ -689,7 +823,7 @@ def fill_survey_with_ai(driver, survey_url):
 
             # No "下一页" - try to submit
             find_submit_button(driver)
-            time.sleep(2)
+            time.sleep(3)  # Wait longer for page to load
 
             # Check if submitted successfully
             if check_submission_success(driver):
