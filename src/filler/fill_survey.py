@@ -126,6 +126,68 @@ def get_question_title(element):
     return "Unknown"
 
 
+def get_max_select(element, elem_type):
+    """Extract max select limit for multiple choice questions."""
+    # Only for multiple choice (type='3')
+    if elem_type != '3':
+        return None
+
+    try:
+        # Check element attributes
+        max_sel = element.get_attribute('maxselect')
+        if max_sel and max_sel.isdigit():
+            return int(max_sel)
+
+        # Check for common patterns in title text
+        title_elem = None
+        for selector in ['.topichtml', '.topic', '.topicnumber + div']:
+            try:
+                title_elem = element.find_element(By.CSS_SELECTOR, selector)
+                break
+            except:
+                continue
+
+        if title_elem:
+            text = title_elem.text
+            # Patterns like "最多选X项" "最多选X个" "限选X项"
+            patterns = [
+                r'最多选\s*(\d+)\s*[项个]',
+                r'限选\s*(\d+)\s*[项个]',
+                r'可选\s*(\d+)\s*[项个]',
+                r'至多选\s*(\d+)\s*[项个]',
+            ]
+            for pattern in patterns:
+                match = re.search(pattern, text)
+                if match:
+                    return int(match.group(1))
+
+        # Check for hidden input with maxselect
+        try:
+            hidden = element.find_element(By.CSS_SELECTOR, 'input[maxselect], input[data-maxselect]')
+            val = hidden.get_attribute('maxselect') or hidden.get_attribute('data-maxselect')
+            if val and val.isdigit():
+                return int(val)
+        except:
+            pass
+
+        # Check for script tags with max select info
+        try:
+            scripts = element.find_elements(By.TAG_NAME, 'script')
+            for script in scripts:
+                content = script.get_attribute('innerHTML')
+                if content:
+                    match = re.search(r'maxselect["\']?\s*[:=]\s*(\d+)', content, re.I)
+                    if match:
+                        return int(match.group(1))
+        except:
+            pass
+
+    except:
+        pass
+
+    return None
+
+
 def detect_question_type(element, elem_type):
     """Detect question type from element attributes and UI."""
     options = []
@@ -223,13 +285,22 @@ def extract_all_questions(driver):
             qtype, options = detect_question_type(elem, elem_type)
 
             if qtype != 'unknown':
-                questions.append({
+                # Get max select limit for multiple choice
+                max_select = get_max_select(elem, elem_type)
+
+                question_data = {
                     'index': len(questions) + 1,
                     'title': title[:200],
                     'type': qtype,
                     'options': options[:15],
                     'element': elem
-                })
+                }
+
+                if max_select:
+                    question_data['max_select'] = max_select
+                    print(f"   [DEBUG] Q{question_data['index']}: max_select={max_select}")
+
+                questions.append(question_data)
         except:
             continue
 
@@ -295,7 +366,7 @@ def fill_single_choice(driver, element, answer):
     return True
 
 
-def fill_multiple_choice(driver, element, answer):
+def fill_multiple_choice(driver, element, answer, max_select=None):
     """Fill multiple choice question."""
     checkboxes = (element.find_elements(By.CSS_SELECTOR, '.ui-checkbox') or
                   element.find_elements(By.CSS_SELECTOR, 'input[type="checkbox"]'))
@@ -311,13 +382,14 @@ def fill_multiple_choice(driver, element, answer):
     else:
         indices = [int(answer) - 1] if str(answer).isdigit() else [0]
 
-    # Limit to 3 options
-    indices = indices[:3]
+    # Apply max_select limit
+    limit = max_select if max_select else 3
+    indices = indices[:limit]
 
     # Filter to valid indices
     valid = find_valid_indices(checkboxes)
     if valid:
-        indices = [i for i in indices if i in valid] or random.sample(valid, min(2, len(valid)))
+        indices = [i for i in indices if i in valid] or random.sample(valid, min(2, len(valid), limit))
 
     for idx in indices:
         if idx < len(checkboxes):
@@ -460,7 +532,7 @@ def fill_scale_matrix(driver, element):
     return clicked > 0
 
 
-def fill_answer(driver, element, question_type, answer):
+def fill_answer(driver, element, question_type, answer, max_select=None):
     """Fill a single answer based on question type."""
     random_delay()
     driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
@@ -469,7 +541,7 @@ def fill_answer(driver, element, question_type, answer):
     if question_type == 'single_choice':
         return fill_single_choice(driver, element, answer)
     elif question_type == 'multiple_choice':
-        return fill_multiple_choice(driver, element, answer)
+        return fill_multiple_choice(driver, element, answer, max_select)
     elif question_type == 'ranking':
         return fill_ranking(driver, element, answer)
     elif question_type in ['text', 'textarea']:
@@ -562,6 +634,7 @@ def click_start_button(driver):
 def find_next_page_button(driver):
     """Find and click '下一页' button if exists."""
     current_url = driver.current_url
+    current_page_source = driver.page_source
 
     # Collect all elements with "下一页"
     found_elements = []
@@ -586,41 +659,79 @@ def find_next_page_button(driver):
 
         try:
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", elem)
-            time.sleep(0.3)
+            time.sleep(0.5)
         except:
             pass
 
-        # Try multiple click methods
-        for method in ['click', 'js', 'events']:
-            try:
-                if method == 'click':
-                    elem.click()
-                elif method == 'js':
-                    driver.execute_script("arguments[0].click();", elem)
-                elif method == 'events':
-                    driver.execute_script("""
-                        var elem = arguments[0];
-                        ['click', 'mousedown', 'mouseup'].forEach(function(evt) {
-                            elem.dispatchEvent(new MouseEvent(evt, {bubbles: true, cancelable: true}));
-                        });
-                    """, elem)
+        # Method 1: Visible click first (triggers UI response)
+        try:
+            print(f"   [DEBUG] Attempting visible click...")
+            elem.click()
+            time.sleep(2)  # Wait for page to respond
 
-                time.sleep(2)
+            # Check if page changed
+            new_url = driver.current_url
+            new_page_source = driver.page_source
+            if new_url != current_url or new_page_source != current_page_source:
+                print(f"   [INFO] Clicked '下一页' via visible click - page changed")
+                return True
+        except Exception as e:
+            print(f"   [DEBUG] Visible click failed: {e}")
 
-                # Check if page changed (URL changed or page reloaded)
-                new_url = driver.current_url
-                if new_url != current_url:
-                    print(f"   [INFO] Clicked '下一页' via {method} - URL changed")
-                    return True
+        # Method 2: JavaScript click with events
+        try:
+            print(f"   [DEBUG] Attempting JavaScript click with events...")
+            driver.execute_script("""
+                var elem = arguments[0];
+                // Trigger mouse events
+                ['mouseover', 'mousedown', 'mouseup', 'click'].forEach(function(evt) {
+                    elem.dispatchEvent(new MouseEvent(evt, {
+                        bubbles: true,
+                        cancelable: true,
+                        view: window
+                    }));
+                });
+            """, elem)
+            time.sleep(2)
 
-                # Check if questions changed (page content changed)
-                new_questions = driver.find_elements(By.CSS_SELECTOR, '.field')
-                if new_questions:
-                    print(f"   [INFO] Clicked '下一页' via {method} - new questions found")
-                    return True
+            # Check if page changed
+            new_url = driver.current_url
+            new_page_source = driver.page_source
+            if new_url != current_url or new_page_source != current_page_source:
+                print(f"   [INFO] Clicked '下一页' via JS events - page changed")
+                return True
+        except Exception as e:
+            print(f"   [DEBUG] JS events click failed: {e}")
 
-            except Exception as e:
-                pass
+        # Method 3: Direct JavaScript click
+        try:
+            print(f"   [DEBUG] Attempting direct JavaScript click...")
+            driver.execute_script("arguments[0].click();", elem)
+            time.sleep(2)
+
+            # Check if page changed
+            new_url = driver.current_url
+            new_page_source = driver.page_source
+            if new_url != current_url or new_page_source != current_page_source:
+                print(f"   [INFO] Clicked '下一页' via direct JS - page changed")
+                return True
+        except Exception as e:
+            print(f"   [DEBUG] Direct JS click failed: {e}")
+
+        # Method 4: Find and click parent element
+        try:
+            parent = elem.find_element(By.XPATH, "..")
+            print(f"   [DEBUG] Attempting parent click...")
+            parent.click()
+            time.sleep(2)
+
+            new_url = driver.current_url
+            new_page_source = driver.page_source
+            if new_url != current_url or new_page_source != current_page_source:
+                print(f"   [INFO] Clicked parent of '下一页' - page changed")
+                return True
+        except:
+            pass
 
     print("   [WARN] Could not click '下一页' successfully")
     return False
@@ -768,12 +879,17 @@ def rescan_unanswered_questions(driver):
 
         if types:
             title = get_question_title(parent)
-            unanswered.append({
+            # Get max_select for multiple choice
+            max_select = get_max_select(parent, parent_type)
+            question_data = {
                 'index': len(unanswered) + 1,
                 'title': title[:100],
                 'types': types,
                 'element': parent
-            })
+            }
+            if max_select:
+                question_data['max_select'] = max_select
+            unanswered.append(question_data)
 
     # Check unfilled matrix rows
     for field in driver.find_elements(By.CSS_SELECTOR, '.field[req="1"]'):
@@ -900,7 +1016,7 @@ def fill_survey_with_ai(driver, survey_url, max_time=180):
                         else:
                             return False
                     ans = answers.get(str(q['index']), '1')
-                    success = fill_answer(driver, q['element'], q.get('type'), ans)
+                    success = fill_answer(driver, q['element'], q.get('type'), ans, q.get('max_select'))
                     print(f"   Q{q['index']}: {'✓' if success else '✗'} ({q.get('type')})")
                 else:
                     # All questions filled normally
@@ -951,7 +1067,7 @@ def fill_survey_with_ai(driver, survey_url, max_time=180):
                 for q in unanswered:
                     ans = new_answers.get(str(q['index']), '1')
                     for qtype in q.get('types', [q.get('type', 'text')]):
-                        if fill_answer(driver, q['element'], qtype, ans):
+                        if fill_answer(driver, q['element'], qtype, ans, q.get('max_select')):
                             break
                 find_submit_button(driver)
                 time.sleep(2)

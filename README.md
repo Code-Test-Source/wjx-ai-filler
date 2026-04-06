@@ -22,6 +22,11 @@ A demo AI-powered survey automation tool for 问卷星 (WJX/WenJuanXing).
 
 ## ⚠️ Important Notes
 
+### 安全校验无法绕过
+- 问卷星的安全校验（验证码、滑块验证、人机验证等）**无法自动绕过**
+- 遇到安全校验时，程序会卡住或失败，需要手动处理或跳过该问卷
+- 这是平台的安全机制，不建议尝试绕过
+
 ### 问卷不能包含隐私信息
 - Do not fill in surveys that ask for personal information (ID number, phone, address, etc.)
 - The tool automatically skips "其他/Others" options to avoid fill-in-the-blank questions

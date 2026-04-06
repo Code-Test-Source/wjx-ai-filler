@@ -61,13 +61,19 @@ def get_ai_answers_batch(questions):
     prompt += "请以JSON格式返回答案：{\"1\": \"答案1\", \"2\": \"答案2\", ...}\n\n"
     prompt += "规则：\n"
     prompt += "1. 单选题：返回选项编号（1/2/3...），不要选含\"其他\"的选项\n"
-    prompt += "2. 多选题：返回编号用逗号分隔（如\"1,2\"），最多3个选项，不要选含\"其他\"的选项\n"
-    prompt += "3. 填空题：返回简短具体的答案（20-50字）\n\n"
+    prompt += "2. 多选题：返回编号用逗号分隔（如\"1,2\"），必须遵守题目中的最大选项数限制，不要选含\"其他\"的选项\n"
+    prompt += "3. 排序题：返回选项编号用逗号分隔，按优先级排序（如\"1,2,3\"）\n"
+    prompt += "4. 填空题：返回简短具体的答案（20-50字）\n\n"
     prompt += "问题列表：\n\n"
 
     for q in questions:
         qtype = q.get('type') or (q.get('types', ['unknown'])[0] if q.get('types') else 'unknown')
         prompt += f"问题{q['index']}：{q['title']}\n类型：{qtype}\n"
+
+        # Add max_select info for multiple choice
+        if qtype == 'multiple_choice' and q.get('max_select'):
+            prompt += f"【重要】最多可选{q['max_select']}项\n"
+
         if q.get('options'):
             prompt += "选项：\n"
             for i, opt in enumerate(q['options']):
@@ -121,11 +127,17 @@ def get_fallback_answers(questions):
                 answers[idx] = "体验很好，总体满意。"
 
         elif qtype == 'multiple_choice' and q.get('options'):
-            # Select 1-2 random options, skip "其他"
+            # Get max_select limit if specified
+            max_sel = q.get('max_select', 3)
+            if max_sel is None:
+                max_sel = 3
+            max_sel = min(max_sel, 3)  # Cap at 3 for safety
+
+            # Select 1-max_sel random options, skip "其他"
             valid = [i+1 for i, opt in enumerate(q['options'])
                      if '其他' not in opt.lower() and 'others' not in opt.lower()]
             if valid:
-                num = min(random.randint(1, 2), len(valid), 3)
+                num = min(random.randint(1, max_sel), len(valid))
                 answers[idx] = ",".join(map(str, random.sample(valid, num)))
             else:
                 answers[idx] = "1"
