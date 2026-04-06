@@ -1,6 +1,6 @@
 # WJX AI Survey Filler
 
-A professional AI-powered survey automation tool for 问卷星 (WJX/WenJuanXing).
+A demo AI-powered survey automation tool for 问卷星 (WJX/WenJuanXing).
 
 ## 项目简介
 
