@@ -2,6 +2,29 @@
 
 A demo AI-powered survey automation tool for 问卷星 (WJX/WenJuanXing).
 
+Man!
+
+<img width="249" height="22" alt="d4f33a86ce0ecba998402330ed16f0e" src="https://github.com/user-attachments/assets/ed127458-f568-42dc-8516-3282286bf9b3" />
+
+传统检验毫无作用：
+
+<img width="443" height="123" alt="5f4536fc68ee101c3547144b8a64cf6" src="https://github.com/user-attachments/assets/bfad55c0-4304-47d7-8c07-317f72cf73b2" />
+
+Easy:
+
+<img width="626" height="440" alt="9047c51cadf4a73d5548b198171692e" src="https://github.com/user-attachments/assets/05e01071-45d4-47d3-aa8e-67a96899b87c" />
+
+<img width="751" height="417" alt="f0a3f461b73a1ec1fe9ce296d673438" src="https://github.com/user-attachments/assets/0524e8a5-b13d-4330-b3ff-2a9573942d19" />
+
+
+
+机器人检验没办法，只能做不触发的，如果未来直接用Agent做的话那其实和人没啥区别了，可能可以解决。
+
+<img width="258" height="198" alt="7b0159cfe7d2274462258260f5d1d17" src="https://github.com/user-attachments/assets/f4804e5e-f5fa-495e-8afc-a87058708124" />
+
+无法解决部分情况下开始填写的问题，实际上点击了开始填写但是由于没办法体现在用户界面上最后没法通过安全校验，只能跳过这种。
+
+
 ## 项目简介
 
 本项目旨在帮助用户自动化填写互助问卷以获取积分，从而获得其他用户的帮助性填写。这是一个练习性质的小项目。
