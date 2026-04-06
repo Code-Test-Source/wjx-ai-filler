@@ -511,7 +511,59 @@ def fill_answer(driver, element, question_type, answer):
 
 def click_start_button(driver):
     """Click '开始作答' button if exists. Returns True if clicked."""
-    # Check buttons and inputs for "开始作答"
+    from selenium.webdriver.common.action_chains import ActionChains
+
+    # Check if start button exists
+    try:
+        slide_chunk = driver.find_element(By.CSS_SELECTOR, '#slideChunk')
+    except:
+        # No slide chunk, check other elements
+        slide_chunk = None
+
+    if slide_chunk:
+        print("   [INFO] Found '开始作答' slide button")
+
+        # Method 1: Hide the cover div directly
+        driver.execute_script("""
+            var cover = document.getElementById('divFengMian');
+            if (cover) cover.style.display = 'none';
+        """)
+
+        time.sleep(1)
+
+        # Check if questions appeared
+        questions = driver.find_elements(By.CSS_SELECTOR, '.field')
+        if questions:
+            print("   [INFO] Started survey (hided cover)")
+            return True
+
+        # Method 2: Simulate slide drag
+        try:
+            actions = ActionChains(driver)
+            actions.click_and_hold(slide_chunk).move_by_offset(300, 0).release().perform()
+            time.sleep(1)
+        except:
+            pass
+
+        # Method 3: Trigger touch events
+        driver.execute_script("""
+            var elem = document.getElementById('slideChunk');
+            if (elem) {
+                var startX = elem.getBoundingClientRect().left;
+                var evt = new TouchEvent('touchstart', {bubbles: true, touches: [{clientX: startX}]});
+                elem.dispatchEvent(evt);
+                evt = new TouchEvent('touchmove', {bubbles: true, touches: [{clientX: startX + 300}]});
+                elem.dispatchEvent(evt);
+                evt = new TouchEvent('touchend', {bubbles: true});
+                elem.dispatchEvent(evt);
+            }
+        """)
+
+        time.sleep(1)
+        print("   [INFO] Attempted slide to start")
+        return True
+
+    # Check buttons and inputs
     for tag in ['button', 'input', 'a']:
         for elem in driver.find_elements(By.TAG_NAME, tag):
             text = elem.text or elem.get_attribute('value') or ''
@@ -520,6 +572,7 @@ def click_start_button(driver):
                 time.sleep(2)
                 print("   [INFO] Clicked '开始作答'")
                 return True
+
     return False
 
 
