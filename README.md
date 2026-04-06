@@ -6,9 +6,9 @@ A demo AI-powered survey automation tool for 问卷星 (WJX/WenJuanXing).
 
 本项目旨在帮助用户自动化填写互助问卷以获取积分，从而获得其他用户的帮助性填写。这是一个练习性质的小项目。
 
-**限制说明：** 问卷星限制每日最多填写30个互助问卷，因此项目的效用有所受限。
+**限制说明：** 问卷星限制每日最多填写30个互助问卷。
 
-**优化建议：** 你可以通过调高填写问卷的最低积分要求（默认为15分）来获得尽可能多的积分，优先填写高积分问卷。
+**优化建议：** 你可以通过调高填写问卷的最低积分要求（默认为20分）来获得尽可能多的积分，优先填写高积分问卷。
 
 ## Features
 
@@ -17,8 +17,8 @@ A demo AI-powered survey automation tool for 问卷星 (WJX/WenJuanXing).
 - **Configurable**: API keys and settings via configuration or environment variables
 - **Interactive Mode**: CLI and interactive modes available
 - **Speed Control**: Built-in delays to avoid detection
-- **Daily Limit**: Respects the 30 survey/day limit with website verification
-- **Reward Filter**: Skips surveys with reward < 15 points
+- **Daily Limit**: WJX limits 30 surveys per day
+- **Reward Filter**: Skips surveys with reward < 20 points
 
 ## ⚠️ Important Notes
 

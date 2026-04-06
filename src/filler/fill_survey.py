@@ -2,12 +2,10 @@
 WJX AI Survey Filler - Main survey filling logic
 """
 
-import json
 import time
 import os
 import random
 import re
-from datetime import date
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -26,40 +24,7 @@ MAX_DELAY = config.MAX_DELAY
 WJX_ACTIVITY_URL = config.WJX_ACTIVITY_URL
 COOKIES_FILE = config.COOKIES_FILE
 
-DAILY_LIMIT = 30
-MIN_REWARD_POINTS = 15
-DAILY_COUNT_FILE = "daily_count.json"
-
-
-# ============================================================================
-# Daily Count Management
-# ============================================================================
-
-def get_daily_count():
-    """Get today's survey fill count from file."""
-    today = str(date.today())
-    if os.path.exists(DAILY_COUNT_FILE):
-        try:
-            with open(DAILY_COUNT_FILE, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                if data.get('date') == today:
-                    return data.get('count', 0)
-        except:
-            pass
-    return 0
-
-
-def set_daily_count(count):
-    """Set today's survey fill count."""
-    with open(DAILY_COUNT_FILE, 'w', encoding='utf-8') as f:
-        json.dump({'date': str(date.today()), 'count': count}, f)
-
-
-def increment_daily_count():
-    """Increment today's count and return new value."""
-    count = get_daily_count() + 1
-    set_daily_count(count)
-    return count
+MIN_REWARD_POINTS = 20
 
 
 # ============================================================================
@@ -96,6 +61,7 @@ def setup_driver():
 
 def load_cookies(driver, cookies_file=None):
     """Load cookies from file into driver."""
+    import json
     cookies_file = cookies_file or COOKIES_FILE
     if not os.path.exists(cookies_file):
         return False
@@ -120,82 +86,30 @@ def load_cookies(driver, cookies_file=None):
 # Survey Validation
 # ============================================================================
 
-def check_website_daily_limit(driver):
-    """Check if website shows daily limit reached. Returns (limit_reached, message)."""
-    try:
-        page = driver.page_source
-        if '每个用户每天只能互填问卷30次' in page or '每天只能' in page:
-            return True, "daily_limit_reached"
-        return False, None
-    except:
-        return False, None
-
-
 def check_survey_reward(driver):
-    """Check survey reward points. Returns (has_reward, points).
-
-    Note: Reward info is usually only shown on the activity page, not on the survey itself.
-    If no reward found on survey page, default to allowing the survey.
-    """
+    """Check survey reward points. Returns (has_reward, points)."""
     try:
         page = driver.page_source
 
-        # Look for specific reward patterns on activity/survey list pages
-        # Pattern: "提供XX点数" or "XX积分" near survey link
+        # Pattern on survey page: "填写此问卷可以获得XX个点数"
         patterns = [
+            r'填写此问卷可以获得.*?(\d+)\s*个?\s*点数',  # Main pattern
+            r'可以获得.*?(\d+)\s*个?\s*点数',
             r'提供\s*(\d+)\s*点数',
             r'奖励\s*(\d+)\s*点',
-            r'可获得\s*(\d+)\s*点',
-            r'互填\s*[\:：]\s*(\d+)\s*点',
         ]
 
         for pattern in patterns:
             match = re.search(pattern, page)
             if match:
-                return True, int(match.group(1))
+                points = int(match.group(1))
+                print(f"   [INFO] Found reward: {points}点")
+                return True, points
 
-        # No reward info found - allow survey (reward shown on activity page, not survey)
+        # No reward info found
         return True, 0
     except:
         return True, 0
-
-
-def verify_daily_count_from_website(driver):
-    """Verify and update daily count from website."""
-    if not WJX_ACTIVITY_URL:
-        return get_daily_count()
-
-    try:
-        current_url = driver.current_url
-        driver.get(WJX_ACTIVITY_URL)
-        time.sleep(2)
-
-        page = driver.page_source
-        patterns = [r'已填写\s*(\d+)\s*次', r'今日填写\s*(\d+)\s*份', r'已完成\s*(\d+)\s*份']
-
-        count = None
-        for pattern in patterns:
-            match = re.search(pattern, page)
-            if match:
-                count = int(match.group(1))
-                break
-
-        if count is None:
-            match = re.search(r'还可以填写\s*(\d+)\s*次', page)
-            if match:
-                count = DAILY_LIMIT - int(match.group(1))
-
-        driver.get(current_url)
-        time.sleep(1)
-
-        if count is not None:
-            print(f"   [INFO] Website count: {count}")
-            set_daily_count(count)
-            return count
-    except Exception as e:
-        print(f"   [DEBUG] Website verification failed: {e}")
-
-    return get_daily_count()
 
 
 # ============================================================================
@@ -517,7 +431,6 @@ def click_start_button(driver):
     try:
         slide_chunk = driver.find_element(By.CSS_SELECTOR, '#slideChunk')
     except:
-        # No slide chunk, check other elements
         slide_chunk = None
 
     if slide_chunk:
@@ -708,11 +621,7 @@ def rescan_unanswered_questions(driver):
 # ============================================================================
 
 def fill_survey_with_ai(driver, survey_url):
-    """Fill a single survey (handles multi-page). Returns True, 'daily_limit', 'low_reward', or False."""
-    if get_daily_count() >= DAILY_LIMIT:
-        print(f"\n[STOP] Daily limit reached")
-        return "daily_limit"
-
+    """Fill a single survey (handles multi-page). Returns True, 'low_reward', or False."""
     print(f"\n{'='*60}\nFilling: {survey_url[:60]}...\n{'='*60}")
 
     try:
@@ -723,15 +632,8 @@ def fill_survey_with_ai(driver, survey_url):
         click_start_button(driver)
         random_delay()
 
-        # Check limits
-        limit_reached, _ = check_website_daily_limit(driver)
-        if limit_reached:
-            set_daily_count(DAILY_LIMIT)
-            return "daily_limit"
-
+        # Check reward
         has_reward, points = check_survey_reward(driver)
-        # Only skip if reward is explicitly found and is below minimum
-        # (points=0 means reward info not found on this page - it's shown on activity page)
         if has_reward and points > 0 and points < MIN_REWARD_POINTS:
             print(f"   [SKIP] Reward ({points}点) < minimum ({MIN_REWARD_POINTS}点)")
             return "low_reward"
@@ -760,12 +662,11 @@ def fill_survey_with_ai(driver, survey_url):
                 if not questions:
                     if check_submission_success(driver):
                         print("   [OK] Submitted!")
-                        increment_daily_count()
                         return True
                     if page_num == 1:
                         print("   [WARN] No questions found on first page")
                         return False
-                    continue  # Try again on next iteration
+                    continue
             else:
                 # Get and fill answers
                 answers = get_ai_answers_batch(questions) or get_fallback_answers(questions)
@@ -784,63 +685,42 @@ def fill_survey_with_ai(driver, survey_url):
                     print("   [INFO] Going to next page...")
                     random_delay()
                     page_num += 1
-                    continue  # Continue to next iteration of while loop
+                    continue
 
             # No "下一页" - try to submit
-            if not find_submit_button(driver):
-                print("   [WARN] No submit button found")
-
+            find_submit_button(driver)
             time.sleep(2)
 
             # Check if submitted successfully
             if check_submission_success(driver):
                 print("   [OK] Submitted!")
-                increment_daily_count()
                 return True
 
-            # Not successful - rescan and fix unanswered questions
-            print("   [WARN] Not submitted, checking for unanswered questions...")
-
-            for attempt in range(2):
-                unanswered = rescan_unanswered_questions(driver)
-                if not unanswered:
-                    if check_submission_success(driver):
-                        print("   [OK] Submitted!")
-                        increment_daily_count()
-                        return True
-                    break
-
-                print(f"   Found {len(unanswered)} unanswered, refilling...")
-                new_answers = get_ai_answers_batch(unanswered) or get_fallback_answers(unanswered)
-
+            # Not successful - try one quick fix
+            unanswered = rescan_unanswered_questions(driver)
+            if unanswered:
+                print(f"   [WARN] Found {len(unanswered)} unanswered, fixing...")
+                new_answers = get_fallback_answers(unanswered)
                 for q in unanswered:
                     ans = new_answers.get(str(q['index']), '1')
                     for qtype in q.get('types', [q.get('type', 'text')]):
                         if fill_answer(driver, q['element'], qtype, ans):
                             break
-
-                # Try submit again
-                random_delay()
                 find_submit_button(driver)
                 time.sleep(2)
 
-                if check_submission_success(driver):
-                    print("   [OK] Submitted!")
-                    increment_daily_count()
-                    return True
+            if check_submission_success(driver):
+                print("   [OK] Submitted!")
+                return True
 
-            # Failed after retries
-            print("   [WARN] Failed to submit after retries")
-            with open("incomplete_surveys.txt", "a", encoding="utf-8") as f:
-                f.write(survey_url + "\n")
+            # Failed - just move on to next survey
+            print("   [WARN] Submission failed, moving to next survey")
             return False
 
         return False
 
     except Exception as e:
         print(f"   [ERROR] {e}")
-        with open("incomplete_surveys.txt", "a", encoding="utf-8") as f:
-            f.write(survey_url + "\n")
         return False
 
 
@@ -854,7 +734,7 @@ def main():
         print("\n❌ cookies.json not found!")
         return
 
-    # Load incomplete surveys
+    # Load incomplete surveys to skip
     incomplete = set()
     if os.path.exists("incomplete_surveys.txt"):
         with open("incomplete_surveys.txt", "r", encoding="utf-8") as f:
@@ -866,12 +746,17 @@ def main():
     try:
         load_cookies(driver)
 
-        # Get survey links
-        links = load_survey_links()
-        if not links and WJX_ACTIVITY_URL:
+        # Always fetch fresh surveys from activity page
+        links = []
+        if WJX_ACTIVITY_URL:
+            print("\n📥 Fetching surveys from activity page...")
             driver.get(WJX_ACTIVITY_URL)
             random_delay()
             links = list({e.get_attribute('href') for e in driver.find_elements(By.CSS_SELECTOR, 'a[href*="/vm/"]') if e.get_attribute('href')})
+
+        # Fallback to saved links if no activity URL
+        if not links:
+            links = load_survey_links()
 
         links = [l for l in links if l not in incomplete]
         print(f"   Found {len(links)} surveys")
@@ -880,42 +765,44 @@ def main():
             print("\n❌ No surveys found")
             return
 
-        # Verify daily count
-        count = verify_daily_count_from_website(driver)
-        print(f"   Daily count: {count}/{DAILY_LIMIT}")
-        if count >= DAILY_LIMIT:
-            print("\n[STOP] Daily limit reached")
-            return
-
         # Fill surveys
         success = 0
         skipped_low_reward = 0
+        filled_count = 0
 
-        for i, link in enumerate(links):
-            if get_daily_count() >= DAILY_LIMIT:
+        while True:
+            for i, link in enumerate(links):
+                print(f"\n{'#'*60}\nSurvey {i+1}/{len(links)}")
+                result = fill_survey_with_ai(driver, link)
+
+                if result == True:
+                    success += 1
+                    filled_count += 1
+                elif result == "low_reward":
+                    skipped_low_reward += 1
+
+                random_delay()
+
+                # Re-fetch every 20 items
+                if filled_count > 0 and filled_count % 20 == 0 and WJX_ACTIVITY_URL:
+                    print(f"\n📥 Re-fetching surveys (filled {filled_count})...")
+                    driver.get(WJX_ACTIVITY_URL)
+                    random_delay()
+                    new_links = list({e.get_attribute('href') for e in driver.find_elements(By.CSS_SELECTOR, 'a[href*="/vm/"]') if e.get_attribute('href')})
+                    new_links = [l for l in new_links if l not in incomplete]
+                    if new_links:
+                        links = new_links
+                        print(f"   Found {len(links)} new surveys")
+                        break  # Restart the loop with new links
+            else:
+                # Loop completed normally - no break, all surveys done
                 break
-
-            print(f"\n{'#'*60}\nSurvey {i+1}/{len(links)}")
-            result = fill_survey_with_ai(driver, link)
-
-            if result == True:
-                success += 1
-            elif result == "low_reward":
-                skipped_low_reward += 1
-            elif result == "daily_limit":
-                break
-
-            random_delay()
 
         print(f"\n{'='*60}")
         print(f"Completed: {success} surveys")
         if skipped_low_reward:
             print(f"Skipped (reward < {MIN_REWARD_POINTS}点): {skipped_low_reward}")
-        print(f"Daily total: {get_daily_count()}/{DAILY_LIMIT}")
-
-        print(f"\n{'='*60}")
-        print(f"Completed: {success} surveys")
-        print(f"Daily total: {get_daily_count()}/{DAILY_LIMIT}")
+        print(f"{'='*60}")
 
     finally:
         input("\nPress Enter to close...")

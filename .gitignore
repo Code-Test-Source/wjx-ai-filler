@@ -48,7 +48,6 @@ survey_page.html
 survey_state.json
 survey_links.txt
 incomplete_surveys.txt
-daily_count.json
 conversation*.txt
 test/*.html
 test/*.json
