@@ -10,11 +10,12 @@ Usage:
 """
 
 import sys
+import os
 
-# Add src to path
-sys.path.insert(0, __file__.rsplit('/', 1)[0] + '/src')
+# Add project root to path for src imports
+sys.path.insert(0, os.path.dirname(__file__))
 
-from cli import main
+from src.cli import main
 
 if __name__ == "__main__":
     main()
