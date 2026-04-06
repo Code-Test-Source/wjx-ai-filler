@@ -793,12 +793,19 @@ def fill_survey_with_ai(driver, survey_url):
                     if questions:
                         print(f"   Found {len(questions)} questions after clicking start")
 
+                # If still no questions, wait and retry once more
+                if not questions:
+                    time.sleep(2)  # Wait for page to load
+                    click_start_button(driver)
+                    random_delay()
+                    questions = extract_all_questions(driver)
+
                 if not questions:
                     if check_submission_success(driver):
                         print("   [OK] Submitted!")
                         return True
                     if page_num == 1:
-                        print("   [WARN] No questions found on first page")
+                        print("   [WARN] No questions found on first page - skipping")
                         return False
                     continue
             else:
@@ -858,6 +865,19 @@ def fill_survey_with_ai(driver, survey_url):
         return False
 
 
+def fetch_surveys_from_activity(driver):
+    """Fetch survey links from activity page."""
+    if not WJX_ACTIVITY_URL:
+        return []
+
+    print("\n📥 Fetching surveys from activity page...")
+    driver.get(WJX_ACTIVITY_URL)
+    random_delay()
+    links = list({e.get_attribute('href') for e in driver.find_elements(By.CSS_SELECTOR, 'a[href*="/vm/"]') if e.get_attribute('href')})
+    print(f"   Found {len(links)} surveys")
+    return links
+
+
 def main():
     """Main entry point."""
     print("\n" + "="*60)
@@ -868,32 +888,17 @@ def main():
         print("\n❌ cookies.json not found!")
         return
 
-    # Load incomplete surveys to skip
-    incomplete = set()
-    if os.path.exists("incomplete_surveys.txt"):
-        with open("incomplete_surveys.txt", "r", encoding="utf-8") as f:
-            incomplete = {l.strip() for l in f if l.strip()}
-        print(f"\n📋 Loaded {len(incomplete)} incomplete surveys to skip")
-
     driver = setup_driver()
 
     try:
         load_cookies(driver)
 
-        # Always fetch fresh surveys from activity page
-        links = []
-        if WJX_ACTIVITY_URL:
-            print("\n📥 Fetching surveys from activity page...")
-            driver.get(WJX_ACTIVITY_URL)
-            random_delay()
-            links = list({e.get_attribute('href') for e in driver.find_elements(By.CSS_SELECTOR, 'a[href*="/vm/"]') if e.get_attribute('href')})
+        # Fetch surveys from activity page
+        links = fetch_surveys_from_activity(driver)
 
         # Fallback to saved links if no activity URL
         if not links:
             links = load_survey_links()
-
-        links = [l for l in links if l not in incomplete]
-        print(f"   Found {len(links)} surveys")
 
         if not links:
             print("\n❌ No surveys found")
@@ -903,6 +908,8 @@ def main():
         success = 0
         skipped_low_reward = 0
         filled_count = 0
+        consecutive_failures = 0  # Track consecutive failures
+        max_consecutive_failures = 3  # Re-fetch after 3 consecutive failures
 
         while True:
             for i, link in enumerate(links):
@@ -912,24 +919,34 @@ def main():
                 if result == True:
                     success += 1
                     filled_count += 1
+                    consecutive_failures = 0  # Reset on success
                 elif result == "low_reward":
                     skipped_low_reward += 1
+                    consecutive_failures = 0
+                else:
+                    consecutive_failures += 1
+                    print(f"   [WARN] Consecutive failures: {consecutive_failures}")
 
                 random_delay()
 
                 # Re-fetch every 20 items
-                if filled_count > 0 and filled_count % 20 == 0 and WJX_ACTIVITY_URL:
+                if filled_count > 0 and filled_count % 20 == 0:
                     print(f"\n📥 Re-fetching surveys (filled {filled_count})...")
-                    driver.get(WJX_ACTIVITY_URL)
-                    random_delay()
-                    new_links = list({e.get_attribute('href') for e in driver.find_elements(By.CSS_SELECTOR, 'a[href*="/vm/"]') if e.get_attribute('href')})
-                    new_links = [l for l in new_links if l not in incomplete]
+                    new_links = fetch_surveys_from_activity(driver)
                     if new_links:
                         links = new_links
-                        print(f"   Found {len(links)} new surveys")
-                        break  # Restart the loop with new links
+                        break  # Restart with new links
+
+                # Re-fetch if too many consecutive failures
+                if consecutive_failures >= max_consecutive_failures:
+                    print(f"\n🔄 Too many failures, re-fetching from activity page...")
+                    new_links = fetch_surveys_from_activity(driver)
+                    if new_links:
+                        links = new_links
+                        consecutive_failures = 0
+                        break  # Restart with new links
             else:
-                # Loop completed normally - no break, all surveys done
+                # Loop completed normally - all surveys done
                 break
 
         print(f"\n{'='*60}")
