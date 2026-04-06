@@ -754,9 +754,31 @@ def rescan_unanswered_questions(driver):
 # Main Fill Logic
 # ============================================================================
 
-def fill_survey_with_ai(driver, survey_url):
-    """Fill a single survey (handles multi-page). Returns True, 'low_reward', or False."""
+def fill_survey_with_ai(driver, survey_url, max_time=180):
+    """Fill a single survey (handles multi-page).
+    Args:
+        driver: Selenium driver
+        survey_url: URL of the survey
+        max_time: Maximum time in seconds (default 3 minutes)
+    Returns True, 'low_reward', or False.
+    """
+    start_time = time.time()
     print(f"\n{'='*60}\nFilling: {survey_url[:60]}...\n{'='*60}")
+
+    def check_timeout():
+        """Check if we've exceeded max time"""
+        if time.time() - start_time > max_time:
+            print(f"   [WARN] Timeout after {max_time}s, refreshing...")
+            return True
+        return False
+
+    def refresh_and_retry():
+        """Refresh page and retry once"""
+        print("   [INFO] Refreshing page...")
+        driver.refresh()
+        time.sleep(3)
+        click_start_button(driver)
+        random_delay()
 
     try:
         driver.get(survey_url)
@@ -776,7 +798,17 @@ def fill_survey_with_ai(driver, survey_url):
 
         # Process each page
         page_num = 1
+        refreshed = False  # Track if we've refreshed once
+
         while page_num <= 20:
+            if check_timeout():
+                if not refreshed:
+                    refresh_and_retry()
+                    refreshed = True
+                    continue
+                else:
+                    return False
+
             print(f"\n{'='*20} Page {page_num} {'='*20}")
 
             # Click "开始作答" if present on this page
@@ -795,17 +827,23 @@ def fill_survey_with_ai(driver, survey_url):
 
                 # If still no questions, wait and retry once more
                 if not questions:
-                    time.sleep(2)  # Wait for page to load
+                    time.sleep(2)
                     click_start_button(driver)
                     random_delay()
                     questions = extract_all_questions(driver)
 
                 if not questions:
+                    # Try refresh if haven't yet
+                    if not refreshed and page_num == 1:
+                        refresh_and_retry()
+                        refreshed = True
+                        continue
+
                     if check_submission_success(driver):
                         print("   [OK] Submitted!")
                         return True
                     if page_num == 1:
-                        print("   [WARN] No questions found on first page - skipping")
+                        print("   [WARN] No questions found - skipping")
                         return False
                     continue
             else:
@@ -813,12 +851,30 @@ def fill_survey_with_ai(driver, survey_url):
                 answers = get_ai_answers_batch(questions) or get_fallback_answers(questions)
 
                 for q in questions:
+                    if check_timeout():
+                        if not refreshed:
+                            refresh_and_retry()
+                            refreshed = True
+                            break
+                        else:
+                            return False
                     ans = answers.get(str(q['index']), '1')
                     success = fill_answer(driver, q['element'], q.get('type'), ans)
                     print(f"   Q{q['index']}: {'✓' if success else '✗'} ({q.get('type')})")
+                else:
+                    # All questions filled normally
+                    pass
 
             # Submit or go to next page
             random_delay()
+
+            if check_timeout():
+                if not refreshed:
+                    refresh_and_retry()
+                    refreshed = True
+                    continue
+                else:
+                    return False
 
             # First check if there's a "下一页" button
             if has_next_page(driver):
@@ -830,7 +886,7 @@ def fill_survey_with_ai(driver, survey_url):
 
             # No "下一页" - try to submit
             find_submit_button(driver)
-            time.sleep(3)  # Wait longer for page to load
+            time.sleep(3)
 
             # Check if submitted successfully
             if check_submission_success(driver):
@@ -854,7 +910,7 @@ def fill_survey_with_ai(driver, survey_url):
                 print("   [OK] Submitted!")
                 return True
 
-            # Failed - just move on to next survey
+            # Failed - move to next survey
             print("   [WARN] Submission failed, moving to next survey")
             return False
 
