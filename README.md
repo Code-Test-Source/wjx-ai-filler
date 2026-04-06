@@ -6,6 +6,8 @@
 
 A demo AI-powered survey automation tool for 问卷星 (WJX/WenJuanXing).
 
+<img width="223" height="82" alt="8615e08c25a2e75f8ece64cc05c570b" src="https://github.com/user-attachments/assets/2a00d75b-389d-42e0-a7c9-8d74fc0f9903" />
+
 Man!
 
 <img width="249" height="22" alt="d4f33a86ce0ecba998402330ed16f0e" src="https://github.com/user-attachments/assets/ed127458-f568-42dc-8516-3282286bf9b3" />
