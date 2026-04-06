@@ -525,7 +525,7 @@ def click_start_button(driver):
 
 def find_next_page_button(driver):
     """Find and click '下一页' button if exists."""
-    # Check various element types
+    # Check buttons and inputs
     for tag, attr in [('button', 'text'), ('input', 'value')]:
         for elem in driver.find_elements(By.TAG_NAME, tag):
             text = elem.text or elem.get_attribute(attr or 'value') or ''
@@ -533,6 +533,27 @@ def find_next_page_button(driver):
                 click_element(driver, elem)
                 time.sleep(2)
                 return True
+
+    # Check links
+    for elem in driver.find_elements(By.TAG_NAME, 'a'):
+        if '下一页' in (elem.text or ''):
+            click_element(driver, elem)
+            time.sleep(2)
+            return True
+
+    return False
+
+
+def has_next_page(driver):
+    """Check if '下一页' button exists (without clicking)."""
+    for tag, attr in [('button', 'text'), ('input', 'value')]:
+        for elem in driver.find_elements(By.TAG_NAME, tag):
+            text = elem.text or elem.get_attribute(attr or 'value') or ''
+            if '下一页' in text or 'next' in text.lower():
+                return True
+    for elem in driver.find_elements(By.TAG_NAME, 'a'):
+        if '下一页' in (elem.text or ''):
+            return True
     return False
 
 
@@ -560,13 +581,6 @@ def find_submit_button(driver):
             return True
 
     return False
-
-
-def submit_survey(driver):
-    """Submit survey or go to next page. Returns 'next_page' or True/False."""
-    if find_next_page_button(driver):
-        return "next_page"
-    return find_submit_button(driver)
 
 
 def check_submission_success(driver):
@@ -708,27 +722,42 @@ def fill_survey_with_ai(driver, survey_url):
                     success = fill_answer(driver, q['element'], q.get('type'), ans)
                     print(f"   Q{q['index']}: {'✓' if success else '✗'} ({q.get('type')})")
 
-            # Submit with retry
-            for attempt in range(3):
-                random_delay()
-                result = submit_survey(driver)
+            # Submit or go to next page
+            random_delay()
 
-                if result == "next_page":
+            # First check if there's a "下一页" button
+            if has_next_page(driver):
+                if find_next_page_button(driver):
+                    print("   [INFO] Going to next page...")
+                    random_delay()
                     page_num += 1
-                    break
+                    continue  # Continue to next iteration of while loop
 
-                time.sleep(2)
-                if check_submission_success(driver):
-                    print("   [OK] Submitted!")
-                    increment_daily_count()
-                    return True
+            # No "下一页" - try to submit
+            if not find_submit_button(driver):
+                print("   [WARN] No submit button found")
 
-                # Fix unanswered
+            time.sleep(2)
+
+            # Check if submitted successfully
+            if check_submission_success(driver):
+                print("   [OK] Submitted!")
+                increment_daily_count()
+                return True
+
+            # Not successful - rescan and fix unanswered questions
+            print("   [WARN] Not submitted, checking for unanswered questions...")
+
+            for attempt in range(2):
                 unanswered = rescan_unanswered_questions(driver)
                 if not unanswered:
-                    continue
+                    if check_submission_success(driver):
+                        print("   [OK] Submitted!")
+                        increment_daily_count()
+                        return True
+                    break
 
-                print(f"   Found {len(unanswered)} unanswered")
+                print(f"   Found {len(unanswered)} unanswered, refilling...")
                 new_answers = get_ai_answers_batch(unanswered) or get_fallback_answers(unanswered)
 
                 for q in unanswered:
@@ -736,11 +765,22 @@ def fill_survey_with_ai(driver, survey_url):
                     for qtype in q.get('types', [q.get('type', 'text')]):
                         if fill_answer(driver, q['element'], qtype, ans):
                             break
-            else:
-                # Failed - save for manual
-                with open("incomplete_surveys.txt", "a", encoding="utf-8") as f:
-                    f.write(survey_url + "\n")
-                return False
+
+                # Try submit again
+                random_delay()
+                find_submit_button(driver)
+                time.sleep(2)
+
+                if check_submission_success(driver):
+                    print("   [OK] Submitted!")
+                    increment_daily_count()
+                    return True
+
+            # Failed after retries
+            print("   [WARN] Failed to submit after retries")
+            with open("incomplete_surveys.txt", "a", encoding="utf-8") as f:
+                f.write(survey_url + "\n")
+            return False
 
         return False
 
