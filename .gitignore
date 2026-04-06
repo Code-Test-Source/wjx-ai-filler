@@ -1,0 +1,58 @@
+# Sensitive files
+cookies.json
+.env
+config.json
+
+# ChromeDriver
+chromedriver.exe
+chromedriver
+chromedriver-win64/
+chromedriver*.zip
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Browser
+*.crx
+
+# Logs
+*.log
+
+# Temp/Debug
+*.tmp
+page_source.html
+survey_page.html
+survey_state.json
+survey_links.txt
+incomplete_surveys.txt
+daily_count.json
+conversation*.txt
+test/*.html
+test/*.json
+
+# Credentials - never commit
+*credential*
+*secret*
+*password*
