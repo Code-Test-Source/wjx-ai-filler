@@ -52,6 +52,8 @@ pip install -r requirements.txt
 
 ### 2. Download ChromeDriver
 
+> ⚠️ **Important:** `chromedriver.exe` must be placed in the **project root folder** (same level as `src/`).
+
 **Auto Download (Recommended)**
 
 Run the CLI command to automatically download the matching ChromeDriver:
@@ -59,7 +61,7 @@ Run the CLI command to automatically download the matching ChromeDriver:
 uv run python -m src.cli download-driver
 ```
 
-This will automatically detect your Chrome version and download the correct ChromeDriver.
+This will automatically detect your Chrome version and download the correct ChromeDriver to the project root.
 
 **Manual Download (If Auto Fails)**
 
